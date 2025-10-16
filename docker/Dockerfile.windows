@@ -1,0 +1,9 @@
+FROM plugins/base:windows-ltsc2022-amd64
+
+USER ContainerAdministrator
+
+ENV GODEBUG=netdns=go
+
+ADD release/windows/amd64/drone-azure-oidc.exe C:/drone-azure-oidc.exe
+
+ENTRYPOINT ["C:\\drone-azure-oidc.exe"]
