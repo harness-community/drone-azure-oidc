@@ -13,37 +13,20 @@ import (
 // Args provides plugin execution arguments.
 type Args struct {
 	Pipeline
-
-	// Level defines the plugin log level.
-	Level string `envconfig:"PLUGIN_LOG_LEVEL"`
-
-	// OIDCToken is the OIDC token from Harness (auto-populated by Harness CI).
-	OIDCToken string `envconfig:"PLUGIN_OIDC_TOKEN_ID"`
-
-	// TenantID is the Azure AD Tenant ID.
-	TenantID string `envconfig:"PLUGIN_TENANT_ID"`
-
-	// ClientID is the Azure AD Application (Client) ID.
-	ClientID string `envconfig:"PLUGIN_CLIENT_ID"`
-
-	// Scope is the Azure Resource Scope (optional, defaults to Azure Storage).
-	Scope string `envconfig:"PLUGIN_SCOPE"`
+	Level         string `envconfig:"PLUGIN_LOG_LEVEL"`
+	OIDCToken     string `envconfig:"PLUGIN_OIDC_TOKEN_ID"`
+	TenantID      string `envconfig:"PLUGIN_TENANT_ID"`
+	ClientID      string `envconfig:"PLUGIN_CLIENT_ID"`
+	Scope         string `envconfig:"PLUGIN_SCOPE"`
+	AuthorityHost string `envconfig:"PLUGIN_AZURE_AUTHORITY_HOST"`
 }
 
 // Exec executes the plugin.
 func Exec(ctx context.Context, args Args) error {
-	// 1. Validate required arguments
 	if err := VerifyEnv(args); err != nil {
 		return err
 	}
 
-	// 2. Set default scope if not provided
-	if args.Scope == "" {
-		args.Scope = "https://storage.azure.com/.default"
-		logrus.Debugf("using default scope: %s", args.Scope)
-	}
-
-	// 3. Exchange OIDC token for Azure AD access token
 	logrus.Infof("exchanging OIDC token for Azure AD access token")
 	tokenResp, err := ExchangeOIDCForAzureToken(
 		ctx,
@@ -51,12 +34,12 @@ func Exec(ctx context.Context, args Args) error {
 		args.TenantID,
 		args.ClientID,
 		args.Scope,
+		args.AuthorityHost,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to exchange OIDC token: %w", err)
 	}
 
-	// 4. Write access token to output file
 	if err := WriteEnvToFile("AZURE_ACCESS_TOKEN", tokenResp.AccessToken); err != nil {
 		return err
 	}
@@ -78,7 +61,20 @@ func VerifyEnv(args Args) error {
 	if args.ClientID == "" {
 		return fmt.Errorf("client-id is not provided")
 	}
+	if err := validateGUID(args.TenantID, "tenant-id"); err != nil {
+		return err
+	}
+	if err := validateGUID(args.ClientID, "client-id"); err != nil {
+		return err
+	}
 	return nil
+}
+
+func validateGUID(value, fieldName string) error {
+	if len(value) == 36 && value[8] == '-' && value[13] == '-' && value[18] == '-' && value[23] == '-' {
+		return nil
+	}
+	return fmt.Errorf("%s must be a valid GUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)", fieldName)
 }
 
 // WriteEnvToFile writes a key-value pair to the Harness output secret file.
