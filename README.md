@@ -18,7 +18,7 @@ This plugin is designed exclusively for Service Principal authentication, which 
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `tenant_id` | string | Yes | - | The Azure AD Tenant ID (GUID or one of: `common`, `organizations`, `consumers`) |
+| `tenant_id` | string | Yes | - | The Azure AD Tenant ID (GUID format) |
 | `client_id` | string | Yes | - | The Azure AD Application (Client) ID (GUID format) |
 | `scope` | string | No | `https://management.azure.com/.default` | The Azure resource scope for the access token |
 | `azure_authority_host` | string | No | `https://login.microsoftonline.com` | The Azure AD authority host to use (set for national clouds like Azure Gov/China) |
