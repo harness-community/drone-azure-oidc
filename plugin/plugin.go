@@ -23,10 +23,11 @@ type Args struct {
 
 // Exec executes the plugin.
 func Exec(ctx context.Context, args Args) error {
+	// 1. verify Env variables
 	if err := VerifyEnv(args); err != nil {
 		return err
 	}
-
+	// 2. Exchange OIDC token for Azure AD access token
 	logrus.Infof("exchanging OIDC token for Azure AD access token")
 	tokenResp, err := ExchangeOIDCForAzureToken(
 		ctx,
@@ -39,7 +40,7 @@ func Exec(ctx context.Context, args Args) error {
 	if err != nil {
 		return fmt.Errorf("failed to exchange OIDC token: %w", err)
 	}
-
+	// 3. Write access token to output file
 	if err := WriteEnvToFile("AZURE_ACCESS_TOKEN", tokenResp.AccessToken); err != nil {
 		return err
 	}
