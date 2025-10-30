@@ -33,29 +33,33 @@ type AzureErrorResponse struct {
 	CorrelationID    string `json:"correlation_id"`
 }
 
+// default settings for Azure authority and HTTP
+const (
+	defaultAuthorityHost = "https://login.microsoftonline.com"
+	defaultHTTPTimeout   = 30 * time.Second
+	defaultScope         = "https://management.azure.com/.default"
+)
+
 // ExchangeOIDCForAzureToken exchanges an external OIDC token for an Azure AD access token.
-func ExchangeOIDCForAzureToken(ctx context.Context, oidcToken, tenantID, clientID, scope string) (*AzureTokenResponse, error) {
+func ExchangeOIDCForAzureToken(ctx context.Context, oidcToken, tenantID, clientID, scope, authorityHost string) (*AzureTokenResponse, error) {
 	// Create context with timeout
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, defaultHTTPTimeout)
 	defer cancel()
 
-	// Validate inputs
-	if err := validateGUID(tenantID, "tenant_id"); err != nil {
-		return nil, err
+	// Apply default values if not provided
+	if strings.TrimSpace(authorityHost) == "" {
+		authorityHost = defaultAuthorityHost
 	}
-	if err := validateGUID(clientID, "client_id"); err != nil {
-		return nil, err
+	if strings.TrimSpace(scope) == "" {
+		scope = defaultScope
 	}
-
-	// Construct Azure AD token endpoint
-	tokenEndpoint := fmt.Sprintf(
-		"https://login.microsoftonline.com/%s/oauth2/v2.0/token",
-		tenantID,
-	)
+	authorityHost = strings.TrimRight(authorityHost, "/")
+	tokenEndpoint := fmt.Sprintf("%s/%s/oauth2/v2.0/token", authorityHost, tenantID)
 
 	logrus.Debugf("token endpoint: %s", tokenEndpoint)
 	logrus.Debugf("client_id: %s", clientID)
 	logrus.Debugf("scope: %s", scope)
+	logrus.Debugf("azure_authority_host: %s", authorityHost)
 
 	// Prepare request body
 	data := url.Values{}
@@ -66,65 +70,38 @@ func ExchangeOIDCForAzureToken(ctx context.Context, oidcToken, tenantID, clientI
 	data.Set("grant_type", "client_credentials")
 
 	// Make HTTP request
-	req, err := http.NewRequestWithContext(
-		ctx,
-		"POST",
-		tokenEndpoint,
-		strings.NewReader(data.Encode()),
-	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenEndpoint, strings.NewReader(data.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: defaultHTTPTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange token: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Read response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
 	// Parse response
 	if resp.StatusCode != http.StatusOK {
-		// Try to parse Azure error response
+		// Limit error body to avoid logging large payloads
 		var azureErr AzureErrorResponse
-		if err := json.Unmarshal(body, &azureErr); err == nil && azureErr.Error != "" {
-			return nil, fmt.Errorf(
-				"token exchange failed: %s - %s (trace_id: %s)",
-				azureErr.Error,
-				sanitizeErrorDescription(azureErr.ErrorDescription),
-				azureErr.TraceID,
-			)
+		limited := &io.LimitedReader{R: resp.Body, N: 4096}
+		_ = json.NewDecoder(limited).Decode(&azureErr)
+		if azureErr.Error != "" {
+			return nil, fmt.Errorf("token exchange failed: %s - %s (status=%d)", azureErr.Error, sanitizeErrorDescription(azureErr.ErrorDescription), resp.StatusCode)
 		}
-		// Fallback to generic error (sanitize to avoid leaking tokens)
 		return nil, fmt.Errorf("token exchange failed: %s", resp.Status)
 	}
 
 	var tokenResp AzureTokenResponse
-	if err := json.Unmarshal(body, &tokenResp); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	return &tokenResp, nil
-}
-
-// validateGUID validates that a string is a valid GUID format.
-func validateGUID(value, fieldName string) error {
-	if value == "" {
-		return fmt.Errorf("%s cannot be empty", fieldName)
-	}
-	// Basic GUID validation (8-4-4-4-12 format)
-	if len(value) == 36 && value[8] == '-' && value[13] == '-' && value[18] == '-' && value[23] == '-' {
-		return nil
-	}
-	return fmt.Errorf("%s must be a valid GUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)", fieldName)
 }
 
 // sanitizeErrorDescription removes potentially sensitive information from error messages.

@@ -20,14 +20,15 @@ This plugin is designed exclusively for Service Principal authentication, which 
 |-----------|------|----------|---------|-------------|
 | `tenant_id` | string | Yes | - | The Azure AD Tenant ID (GUID format) |
 | `client_id` | string | Yes | - | The Azure AD Application (Client) ID (GUID format) |
-| `scope` | string | No | `https://storage.azure.com/.default` | The Azure resource scope for the access token |
+| `scope` | string | No | `https://management.azure.com/.default` | The Azure resource scope for the access token |
+| `azure_authority_host` | string | No | `https://login.microsoftonline.com` | The Azure AD authority host to use (set for national clouds like Azure Gov/China) |
 
 ## Supported Scopes
 
 | Service | Scope |
 |---------|-------|
-| Azure Storage (default) | `https://storage.azure.com/.default` |
-| Azure Management API | `https://management.azure.com/.default` |
+| Azure Management API (default) | `https://management.azure.com/.default` |
+| Azure Storage | `https://storage.azure.com/.default` |
 | Microsoft Graph | `https://graph.microsoft.com/.default` |
 | Azure Container Registry | `https://containerregistry.azure.net/.default` |
 | Azure Key Vault | `https://vault.azure.net/.default` |
@@ -56,7 +57,7 @@ The plugin `plugins/azure-oidc` is available for the following architectures:
 
 ## Usage Examples
 
-### Basic Authentication with Azure Storage
+### Basic Authentication with Azure Management
 
 ```yaml
 - step:
@@ -85,6 +86,23 @@ The plugin `plugins/azure-oidc` is available for the following architectures:
         tenant_id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
         client_id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
         scope: https://containerregistry.azure.net/.default
+```
+
+### Custom Authority Host (Azure Government example)
+
+```yaml
+- step:
+    type: Plugin
+    name: Azure OIDC (US Gov)
+    identifier: azure_oidc_usgov
+    spec:
+      connectorRef: harness-docker-connector
+      image: plugins/azure-oidc
+      settings:
+        tenant_id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+        client_id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+        scope: https://management.azure.us/.default
+        azure_authority_host: https://login.microsoftonline.us
 ```
 
 ## Azure Prerequisites
@@ -167,7 +185,7 @@ az role assignment create \
 2. Plugin receives OIDC token via PLUGIN_OIDC_TOKEN_ID
    ↓
 3. Plugin exchanges OIDC token with Azure AD
-   POST https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token
+   POST {azure_authority_host}/{tenant}/oauth2/v2.0/token (default: https://login.microsoftonline.com)
    ↓
 4. Azure AD validates the token against Federated Identity Credential
    ↓
