@@ -1,8 +1,6 @@
 module github.com/harness-community/drone-azure-oidc
 
-go 1.24.0
-
-toolchain go1.25.11
+go 1.25.12
 
 require (
 	github.com/kelseyhightower/envconfig v1.4.0
